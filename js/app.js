@@ -3,6 +3,7 @@
 
   const STORAGE_KEY = "todo-tasks-v1";
   const META_KEY = "todo-meta-v1";
+  const GOALS_KEY = "todo-goals-v1";
   const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
   const PRIORITY_LABEL = { high: "高", medium: "中", low: "低" };
   const XP_PER_TASK = 10;
@@ -29,6 +30,86 @@
     "もはや伝説",
   ];
 
+  // 「手順を考えるのが面倒」を解決するためのカテゴリ別プランテンプレート
+  const GOAL_TEMPLATES = {
+    exam: {
+      steps: [
+        "試験日と申込方法を調べる(5分)",
+        "今の実力を測る(過去問・模試を1回解く)",
+        "教材を1つだけ決めて用意する",
+        "毎日の学習メニューを決める(例: 単語10個+問題5問)",
+        "まず1週間続けてみる",
+        "中間チェック①(模試・過去問をもう1回)",
+        "いちばん苦手な分野を1つ潰す",
+        "中間チェック②(伸びを確認する)",
+        "直前1週間は総復習にあてる",
+        "本番を受ける!",
+      ],
+      habit: "教材を1ページ(または単語10個)やる",
+    },
+    learning: {
+      steps: [
+        "できるようになりたいことを1つに絞る",
+        "入門教材を1つだけ決める",
+        "毎日やる量を決める(1日10分でOK)",
+        "教材の前半を終わらせる",
+        "教材を最後まで終わらせる",
+        "小さな成果物を1つ作ってみる",
+        "作ったものを人に見せる・公開する",
+      ],
+      habit: "教材を10分だけ進める",
+    },
+    exercise: {
+      steps: [
+        "目標を数字で決める(体重・回数・距離など)",
+        "現状を記録する(体重計に乗る・写真を撮る)",
+        "週の運動メニューを決める(最初は週2でOK)",
+        "運動する曜日と時間を決めてカレンダーに入れる",
+        "まず1週間続けてみる",
+        "2週間後に数字をチェックする",
+        "メニューを少しだけ増やす",
+        "1ヶ月後に数字をチェックする",
+      ],
+      habit: "5分だけ体を動かす",
+    },
+    reading: {
+      steps: [
+        "読みたい本を3冊リストアップする",
+        "1冊目を買う・借りる",
+        "読むタイミングを決める(寝る前10分など)",
+        "1冊目を読み終える",
+        "感想を3行だけメモする",
+        "2冊目を読み終える",
+        "3冊目を読み終える",
+      ],
+      habit: "10分だけ本を読む",
+    },
+    money: {
+      steps: [
+        "目標金額と期限を決める",
+        "月々いくら貯めるか逆算する",
+        "先取り貯金(自動振替)を設定する",
+        "固定費を1つ見直す(サブスク・スマホ代)",
+        "1ヶ月目の残高をチェックする",
+        "3ヶ月目の残高をチェックする",
+      ],
+      habit: "家計簿を1行だけつける",
+    },
+    generic: {
+      steps: [
+        "ゴールを具体的な数字・状態で書き直す",
+        "期限から逆算して中間チェック日を決める",
+        "最初の一歩(5分でできること)を決める",
+        "毎日・毎週やることを1つ決める",
+        "まず1週間続けてみる",
+        "中間チェックで進み具合を確認する",
+        "やり方を1つ調整する",
+        "最後までやり切る!",
+      ],
+      habit: "5分だけ目標を進める",
+    },
+  };
+
   // サンドボックス環境では localStorage が使えないことがあるため、
   // その場合はメモリ上のストレージにフォールバックする
   const storage = (() => {
@@ -50,6 +131,7 @@
   let tasks = loadJSON(STORAGE_KEY) || [];
   // meta: xp = 累計経験値, log = 日付ごとの完了件数 { "2026-07-06": 2 }
   let meta = Object.assign({ xp: 0, log: {} }, loadJSON(META_KEY));
+  let goals = loadJSON(GOALS_KEY) || [];
   let filter = "all";
   let query = "";
   let sortBy = "created";
@@ -75,6 +157,13 @@
   const goalCount = document.getElementById("goal-count");
   const goalFill = document.getElementById("goal-fill");
   const weekDots = document.getElementById("week-dots");
+  const addGoalBtn = document.getElementById("add-goal-btn");
+  const goalForm = document.getElementById("goal-form");
+  const goalTitleInput = document.getElementById("goal-title");
+  const goalCategorySelect = document.getElementById("goal-category");
+  const goalDateInput = document.getElementById("goal-date");
+  const goalList = document.getElementById("goal-list");
+  const goalsEmpty = document.getElementById("goals-empty");
 
   function loadJSON(key) {
     try {
@@ -92,6 +181,10 @@
     storage.setItem(META_KEY, JSON.stringify(meta));
   }
 
+  function saveGoals() {
+    storage.setItem(GOALS_KEY, JSON.stringify(goals));
+  }
+
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
@@ -102,6 +195,13 @@
 
   function todayStr() {
     return dateStr(new Date());
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
   }
 
   // 習慣タスクは「今日やったか」、通常タスクは「完了したか」
@@ -155,11 +255,16 @@
     confetti();
   }
 
+  function goalFanfare(title) {
+    showToast(`🏆「${title}」達成!おめでとう!!`);
+    confetti();
+    setTimeout(confetti, 250);
+    setTimeout(confetti, 500);
+  }
+
   function showToast(message) {
     document.querySelectorAll(".toast").forEach((t) => t.remove());
-    const toast = document.createElement("div");
-    toast.className = "toast";
-    toast.textContent = message;
+    const toast = el("div", "toast", message);
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 1900);
   }
@@ -208,6 +313,247 @@
     })(start);
   }
 
+  // ---- 長期目標 ----
+
+  function createGoal(title, category, targetDate) {
+    const tpl = GOAL_TEMPLATES[category] || GOAL_TEMPLATES.generic;
+    goals.push({
+      id: uid(),
+      title,
+      category,
+      targetDate,
+      steps: tpl.steps.map((s) => ({ id: uid(), title: s, done: false })),
+      suggestedHabit: tpl.habit,
+      habitAdded: false,
+      createdAt: Date.now(),
+    });
+    saveGoals();
+  }
+
+  // 戻り値: この操作で目標が達成状態になったか
+  function setStepDone(goalId, stepId, done) {
+    const goal = goals.find((g) => g.id === goalId);
+    if (!goal) return false;
+    const step = goal.steps.find((s) => s.id === stepId);
+    if (!step || step.done === done) return false;
+    step.done = done;
+    if (done) step.doneOn = todayStr();
+    else delete step.doneOn;
+    saveGoals();
+    return done && goal.steps.length > 0 && goal.steps.every((s) => s.done);
+  }
+
+  function toggleStep(goal, step) {
+    if (step.done) {
+      recordUncomplete(step.doneOn || todayStr());
+      setStepDone(goal.id, step.id, false);
+    } else {
+      recordComplete();
+      // 進行中の連動タスクがあれば一緒に完了させる
+      const linked = tasks.find((t) => t.stepId === step.id && !t.completed);
+      if (linked) {
+        linked.completed = true;
+        linked.completedOn = todayStr();
+        save();
+      }
+      const goalDone = setStepDone(goal.id, step.id, true);
+      if (goalDone) goalFanfare(goal.title);
+      else celebrate();
+    }
+    render();
+  }
+
+  function addStepToTasks(goal, step) {
+    tasks.push({
+      id: uid(),
+      title: step.title,
+      due: "",
+      priority: "medium",
+      completed: false,
+      createdAt: Date.now(),
+      goalId: goal.id,
+      stepId: step.id,
+    });
+    save();
+    showToast("📥 今日のタスクに追加した!");
+    render();
+  }
+
+  function paceText(goal, remaining) {
+    if (!goal.targetDate || remaining === 0) return "";
+    const days = Math.ceil(
+      (new Date(goal.targetDate) - new Date(todayStr())) / 86400000,
+    );
+    if (days < 0) return "目標日を過ぎてる!日付を更新しよう";
+    if (days === 0) return "今日が目標日!";
+    const perWeek = Math.ceil(remaining / Math.max(days / 7, 1));
+    const pace =
+      perWeek <= 7
+        ? `週${perWeek}ステップでOK`
+        : `1日${Math.ceil(remaining / days)}ステップペース`;
+    return `あと${days}日・${pace}`;
+  }
+
+  function renderGoals() {
+    goalList.innerHTML = "";
+    goalsEmpty.hidden = goals.length > 0;
+
+    for (const goal of goals) {
+      const total = goal.steps.length;
+      const done = goal.steps.filter((s) => s.done).length;
+      const completed = total > 0 && done === total;
+      const next = goal.steps.find((s) => !s.done);
+
+      const card = el("div", "goal-card" + (completed ? " goal-achieved" : ""));
+
+      // ヘッダー: タイトル + 削除
+      const head = el("div", "goal-head");
+      const title = el(
+        "strong",
+        "goal-title",
+        (completed ? "🏆 " : "") + goal.title,
+      );
+      const delBtn = el("button", "goal-del", "🗑️");
+      delBtn.type = "button";
+      delBtn.title = "目標を削除";
+      delBtn.addEventListener("click", () => {
+        if (delBtn.dataset.armed) {
+          goals = goals.filter((g) => g.id !== goal.id);
+          saveGoals();
+          render();
+        } else {
+          delBtn.dataset.armed = "1";
+          delBtn.textContent = "本当に削除?";
+          setTimeout(() => {
+            delete delBtn.dataset.armed;
+            delBtn.textContent = "🗑️";
+          }, 3000);
+        }
+      });
+      head.appendChild(title);
+      head.appendChild(delBtn);
+      card.appendChild(head);
+
+      // 進捗バー + ペース
+      const progressRow = el("div", "goal-progress-row");
+      const bar = el("div", "bar bar-goal");
+      const fill = el("div");
+      fill.style.width = total ? `${(done / total) * 100}%` : "0%";
+      bar.appendChild(fill);
+      progressRow.appendChild(bar);
+      progressRow.appendChild(el("span", "goal-progress-num", `${done}/${total}`));
+      card.appendChild(progressRow);
+      const pace = completed ? "全ステップ達成!おつかれさま🎉" : paceText(goal, total - done);
+      if (pace) card.appendChild(el("div", "m-note", pace));
+
+      // 次の一歩(未完了の先頭だけを見せる)
+      if (next) {
+        const nextRow = el("div", "goal-next");
+        nextRow.appendChild(el("span", "goal-next-label", "次の一歩"));
+        nextRow.appendChild(el("span", "goal-next-title", next.title));
+        const linked = tasks.some((t) => t.stepId === next.id && !isDone(t));
+        const addBtn = el(
+          "button",
+          "btn-primary btn-small",
+          linked ? "追加済み" : "▶ 今日のタスクに追加",
+        );
+        addBtn.type = "button";
+        addBtn.disabled = linked;
+        addBtn.addEventListener("click", () => addStepToTasks(goal, next));
+        nextRow.appendChild(addBtn);
+        card.appendChild(nextRow);
+      }
+
+      // 習慣の提案
+      if (goal.suggestedHabit && !goal.habitAdded && !completed) {
+        const habitBtn = el(
+          "button",
+          "btn-text goal-habit-btn",
+          `🔁 毎日の習慣に追加: 「${goal.suggestedHabit}」`,
+        );
+        habitBtn.type = "button";
+        habitBtn.addEventListener("click", () => {
+          tasks.push({
+            id: uid(),
+            title: goal.suggestedHabit,
+            due: "",
+            priority: "medium",
+            repeat: "daily",
+            doneDates: [],
+            completed: false,
+            createdAt: Date.now(),
+            goalId: goal.id,
+          });
+          goal.habitAdded = true;
+          save();
+          saveGoals();
+          showToast("🔁 毎日の習慣に追加した!");
+          render();
+        });
+        card.appendChild(habitBtn);
+      }
+
+      // ステップ一覧(折りたたみ)
+      const details = document.createElement("details");
+      const summary = el("summary", null, `ステップ一覧を見る(${done}/${total})`);
+      details.appendChild(summary);
+      const stepsUl = el("ul", "goal-steps");
+      for (const step of goal.steps) {
+        const li = el("li", step.done ? "step-done" : "");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = step.done;
+        cb.setAttribute("aria-label", "ステップ完了");
+        cb.addEventListener("change", () => toggleStep(goal, step));
+        const label = el("span", "step-title", step.title);
+        const rm = el("button", "step-del", "✕");
+        rm.type = "button";
+        rm.title = "ステップを削除";
+        rm.addEventListener("click", () => {
+          goal.steps = goal.steps.filter((s) => s.id !== step.id);
+          saveGoals();
+          render();
+        });
+        li.appendChild(cb);
+        li.appendChild(label);
+        li.appendChild(rm);
+        stepsUl.appendChild(li);
+      }
+      details.appendChild(stepsUl);
+
+      // ステップ追加
+      const addRow = el("div", "step-add");
+      const addInput = document.createElement("input");
+      addInput.type = "text";
+      addInput.placeholder = "ステップを追加...";
+      addInput.maxLength = 200;
+      const addStepBtn = el("button", "btn-secondary btn-small", "追加");
+      addStepBtn.type = "button";
+      const commitStep = () => {
+        const v = addInput.value.trim();
+        if (!v) return;
+        goal.steps.push({ id: uid(), title: v, done: false });
+        saveGoals();
+        render();
+      };
+      addStepBtn.addEventListener("click", commitStep);
+      addInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commitStep();
+        }
+      });
+      addRow.appendChild(addInput);
+      addRow.appendChild(addStepBtn);
+      details.appendChild(addRow);
+
+      card.appendChild(details);
+      goalList.appendChild(card);
+    }
+  }
+
+  // ---- タスク ----
+
   function visibleTasks() {
     let result = tasks.filter((t) => {
       if (filter === "active" && isDone(t)) return false;
@@ -252,9 +598,10 @@
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = dateStr(d);
-      const dot = document.createElement("span");
-      dot.className =
-        "dot" + (meta.log[key] ? " on" : "") + (i === 0 ? " today" : "");
+      const dot = el(
+        "span",
+        "dot" + (meta.log[key] ? " on" : "") + (i === 0 ? " today" : ""),
+      );
       dot.title = `${key}: ${meta.log[key] || 0}件`;
       weekDots.appendChild(dot);
     }
@@ -269,8 +616,7 @@
 
     for (const task of visible) {
       const done = isDone(task);
-      const li = document.createElement("li");
-      li.className = "task-item" + (done ? " completed" : "");
+      const li = el("li", "task-item" + (done ? " completed" : ""));
       li.dataset.priority = task.priority;
 
       const checkbox = document.createElement("input");
@@ -279,8 +625,7 @@
       checkbox.setAttribute("aria-label", "完了");
       checkbox.addEventListener("change", () => toggle(task.id));
 
-      const body = document.createElement("div");
-      body.className = "task-body";
+      const body = el("div", "task-body");
 
       if (editingId === task.id) {
         const editInput = document.createElement("input");
@@ -306,24 +651,22 @@
         body.appendChild(editInput);
         requestAnimationFrame(() => editInput.focus());
       } else {
-        const title = document.createElement("div");
-        title.className = "task-title";
-        title.textContent = task.title;
+        const title = el("div", "task-title", task.title);
         title.addEventListener("dblclick", () => startEdit(task.id));
 
-        const metaLine = document.createElement("div");
-        metaLine.className = "task-meta";
+        const metaLine = el("div", "task-meta");
         if (task.repeat === "daily") {
-          const rep = document.createElement("span");
-          rep.textContent = "🔁 毎日";
-          metaLine.appendChild(rep);
+          metaLine.appendChild(el("span", null, "🔁 毎日"));
         }
-        const prio = document.createElement("span");
-        prio.textContent = `優先度: ${PRIORITY_LABEL[task.priority]}`;
-        metaLine.appendChild(prio);
+        const linkedGoal = task.goalId && goals.find((g) => g.id === task.goalId);
+        if (linkedGoal) {
+          metaLine.appendChild(el("span", "task-goal-tag", `🎯 ${linkedGoal.title}`));
+        }
+        metaLine.appendChild(
+          el("span", null, `優先度: ${PRIORITY_LABEL[task.priority]}`),
+        );
         if (task.due) {
-          const due = document.createElement("span");
-          due.textContent = `期限: ${task.due}`;
+          const due = el("span", null, `期限: ${task.due}`);
           if (!done && task.due < today) {
             due.classList.add("overdue");
             due.textContent += "(期限切れ)";
@@ -334,17 +677,14 @@
         body.appendChild(metaLine);
       }
 
-      const actions = document.createElement("div");
-      actions.className = "task-actions";
+      const actions = el("div", "task-actions");
 
-      const editBtn = document.createElement("button");
-      editBtn.textContent = "✏️";
+      const editBtn = el("button", null, "✏️");
       editBtn.title = "編集";
       editBtn.setAttribute("aria-label", "編集");
       editBtn.addEventListener("click", () => startEdit(task.id));
 
-      const deleteBtn = document.createElement("button");
-      deleteBtn.textContent = "🗑️";
+      const deleteBtn = el("button", null, "🗑️");
       deleteBtn.title = "削除";
       deleteBtn.setAttribute("aria-label", "削除");
       deleteBtn.addEventListener("click", () => remove(task.id));
@@ -363,6 +703,7 @@
     clearCompletedBtn.hidden = !tasks.some((t) => !t.repeat && t.completed);
 
     renderMomentum();
+    renderGoals();
   }
 
   function addTask(title, due, priority, repeat) {
@@ -399,11 +740,20 @@
       task.completed = false;
       recordUncomplete(task.completedOn || today);
       delete task.completedOn;
+      if (task.stepId) setStepDone(task.goalId, task.stepId, false);
     } else {
       task.completed = true;
       task.completedOn = today;
       recordComplete();
-      celebrate();
+      const goalDone = task.stepId
+        ? setStepDone(task.goalId, task.stepId, true)
+        : false;
+      if (goalDone) {
+        const g = goals.find((g) => g.id === task.goalId);
+        goalFanfare(g ? g.title : task.title);
+      } else {
+        celebrate();
+      }
     }
     save();
     render();
@@ -427,6 +777,22 @@
     addTask(title, dueInput.value, priorityInput.value, repeatInput.checked);
     form.reset();
     titleInput.focus();
+  });
+
+  addGoalBtn.addEventListener("click", () => {
+    goalForm.hidden = !goalForm.hidden;
+    if (!goalForm.hidden) goalTitleInput.focus();
+  });
+
+  goalForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const title = goalTitleInput.value.trim();
+    if (!title) return;
+    createGoal(title, goalCategorySelect.value, goalDateInput.value);
+    goalForm.reset();
+    goalForm.hidden = true;
+    showToast("🎯 プランを作った!まずは次の一歩から");
+    render();
   });
 
   searchInput.addEventListener("input", () => {
