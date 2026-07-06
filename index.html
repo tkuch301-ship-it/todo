@@ -113,6 +113,32 @@
     <footer class="app-footer">
       <button id="clear-completed" class="btn-text">完了済みを削除</button>
     </footer>
+
+    <section class="notes" aria-label="学びメモ">
+      <div class="goals-header">
+        <h2>📝 学びメモ</h2>
+        <span class="m-note">今日学んだこと・思ったことを一言でOK</span>
+      </div>
+      <form id="note-form" class="note-form" autocomplete="off">
+        <textarea id="note-text" rows="2" maxlength="2000"
+          placeholder="例: be動詞の疑問文を復習した。意外と忘れてた #英語"></textarea>
+        <div class="note-form-row">
+          <span class="m-note">#タグ を付けると後から絞り込める(Ctrl+Enterで記録)</span>
+          <button type="submit" class="btn-primary">記録する</button>
+        </div>
+      </form>
+      <div class="note-toolbar">
+        <input type="search" id="note-search" placeholder="メモを検索...">
+        <button type="button" id="note-flashback" class="btn-secondary">⏪ 振り返り</button>
+      </div>
+      <div id="note-tags" class="note-tags"></div>
+      <div id="flashback-box" class="flashback" hidden></div>
+      <div id="note-list" class="note-list"></div>
+      <p id="notes-empty" class="goals-empty" hidden>まだメモがありません。<br>「今日これを知った」「これが面倒だった」— なんでも1行書いておくと、未来の自分が読み返せます</p>
+      <div class="note-more-row">
+        <button type="button" id="note-more" class="btn-text" hidden>もっと見る</button>
+      </div>
+    </section>
   </main>
 
   <script src="js/app.js"></script>
