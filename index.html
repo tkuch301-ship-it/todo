@@ -13,6 +13,31 @@
       <p class="stats" id="stats"></p>
     </header>
 
+    <section class="momentum" aria-label="継続状況">
+      <div class="m-block m-streak">
+        <span class="m-label">連続記録</span>
+        <div class="streak-row">
+          <span class="streak-flame">🔥</span>
+          <strong id="streak-count">0日</strong>
+        </div>
+        <span class="m-note" id="streak-note"></span>
+      </div>
+      <div class="m-block">
+        <span class="m-label"><strong id="level-label">Lv.1</strong> <span id="level-title"></span></span>
+        <div class="bar"><div id="xp-fill"></div></div>
+        <span class="m-note">タスク完了でXPゲット</span>
+      </div>
+      <div class="m-block">
+        <span class="m-label">今日の目標 <strong id="goal-count">0 / 3件</strong></span>
+        <div class="bar bar-goal"><div id="goal-fill"></div></div>
+        <span class="m-note">まず1件、小さく始めよう</span>
+      </div>
+      <div class="m-block m-week">
+        <span class="m-label">直近7日</span>
+        <div class="week-dots" id="week-dots"></div>
+      </div>
+    </section>
+
     <form id="task-form" class="task-form" autocomplete="off">
       <input type="text" id="task-title" placeholder="新しいタスクを入力..." required maxlength="200">
       <div class="form-options">
@@ -27,6 +52,10 @@
             <option value="medium" selected>中</option>
             <option value="high">高</option>
           </select>
+        </label>
+        <label class="repeat-label">
+          <input type="checkbox" id="task-repeat">
+          🔁 毎日繰り返す
         </label>
         <button type="submit" class="btn-primary">追加</button>
       </div>
@@ -48,7 +77,7 @@
 
     <ul id="task-list" class="task-list"></ul>
 
-    <p id="empty-message" class="empty-message" hidden>タスクはありません</p>
+    <p id="empty-message" class="empty-message" hidden>タスクはありません。まずは「5分で終わる小さな一歩」を1つだけ追加してみよう</p>
 
     <footer class="app-footer">
       <button id="clear-completed" class="btn-text">完了済みを削除</button>

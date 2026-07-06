@@ -24,6 +24,24 @@
   }
 }
 
+:root[data-theme="dark"] {
+  --bg: #111827;
+  --surface: #1f2937;
+  --text: #f9fafb;
+  --text-muted: #9ca3af;
+  --border: #374151;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --text: #1f2937;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -57,6 +75,148 @@ body {
 .stats {
   color: var(--text-muted);
   font-size: 0.875rem;
+}
+
+.momentum {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: var(--shadow);
+  margin-bottom: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+}
+
+.m-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 130px;
+}
+
+.m-streak,
+.m-week {
+  flex: 0 0 auto;
+}
+
+.m-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.m-note {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.streak-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.streak-flame {
+  font-size: 1.3rem;
+}
+
+.streak-row strong {
+  font-size: 1.2rem;
+}
+
+.bar {
+  height: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar > div {
+  height: 100%;
+  width: 0;
+  background: var(--primary);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.bar-goal > div {
+  background: var(--low);
+}
+
+.week-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding-top: 0.3rem;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.dot.on {
+  background: var(--low);
+}
+
+.dot.today {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 2rem;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--surface);
+  padding: 0.6rem 1.4rem;
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  font-size: 0.9rem;
+  z-index: 100;
+  animation: toast-pop 1.9s ease forwards;
+}
+
+@keyframes toast-pop {
+  0% { opacity: 0; translate: 0 12px; }
+  12% { opacity: 1; translate: 0 0; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+  .bar > div {
+    transition: none;
+  }
+}
+
+.confetti {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99;
+}
+
+.repeat-label {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.35rem !important;
+  font-size: 0.8rem !important;
+  padding-bottom: 0.5rem;
+  cursor: pointer;
+}
+
+.repeat-label input {
+  accent-color: var(--primary);
+  cursor: pointer;
 }
 
 .task-form {
