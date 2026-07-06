@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>タスク管理ツール</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>📋 タスク管理</h1>
+      <p class="stats" id="stats"></p>
+    </header>
+
+    <form id="task-form" class="task-form" autocomplete="off">
+      <input type="text" id="task-title" placeholder="新しいタスクを入力..." required maxlength="200">
+      <div class="form-options">
+        <label>
+          期限
+          <input type="date" id="task-due">
+        </label>
+        <label>
+          優先度
+          <select id="task-priority">
+            <option value="low">低</option>
+            <option value="medium" selected>中</option>
+            <option value="high">高</option>
+          </select>
+        </label>
+        <button type="submit" class="btn-primary">追加</button>
+      </div>
+    </form>
+
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="タスクを検索...">
+      <div class="filters" id="filters" role="tablist">
+        <button data-filter="all" class="active">すべて</button>
+        <button data-filter="active">未完了</button>
+        <button data-filter="completed">完了</button>
+      </div>
+      <select id="sort">
+        <option value="created">作成順</option>
+        <option value="due">期限順</option>
+        <option value="priority">優先度順</option>
+      </select>
+    </div>
+
+    <ul id="task-list" class="task-list"></ul>
+
+    <p id="empty-message" class="empty-message" hidden>タスクはありません</p>
+
+    <footer class="app-footer">
+      <button id="clear-completed" class="btn-text">完了済みを削除</button>
+    </footer>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
