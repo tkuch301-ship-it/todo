@@ -4,6 +4,9 @@
   const STORAGE_KEY = "todo-tasks-v1";
   const META_KEY = "todo-meta-v1";
   const GOALS_KEY = "todo-goals-v1";
+  const NOTES_KEY = "todo-notes-v1";
+  const NOTE_PAGE = 20;
+  const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
   const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
   const PRIORITY_LABEL = { high: "高", medium: "中", low: "低" };
   const XP_PER_TASK = 10;
@@ -132,10 +135,16 @@
   // meta: xp = 累計経験値, log = 日付ごとの完了件数 { "2026-07-06": 2 }
   let meta = Object.assign({ xp: 0, log: {} }, loadJSON(META_KEY));
   let goals = loadJSON(GOALS_KEY) || [];
+  let notes = loadJSON(NOTES_KEY) || [];
   let filter = "all";
   let query = "";
   let sortBy = "created";
   let editingId = null;
+  let noteQuery = "";
+  let noteTag = null;
+  let noteLimit = 20;
+  let editingNoteId = null;
+  let flashbackNote = null;
 
   const form = document.getElementById("task-form");
   const titleInput = document.getElementById("task-title");
@@ -164,6 +173,15 @@
   const goalDateInput = document.getElementById("goal-date");
   const goalList = document.getElementById("goal-list");
   const goalsEmpty = document.getElementById("goals-empty");
+  const noteForm = document.getElementById("note-form");
+  const noteText = document.getElementById("note-text");
+  const noteSearch = document.getElementById("note-search");
+  const noteFlashbackBtn = document.getElementById("note-flashback");
+  const noteTagsBox = document.getElementById("note-tags");
+  const flashbackBox = document.getElementById("flashback-box");
+  const noteList = document.getElementById("note-list");
+  const notesEmpty = document.getElementById("notes-empty");
+  const noteMoreBtn = document.getElementById("note-more");
 
   function loadJSON(key) {
     try {
@@ -552,6 +570,215 @@
     }
   }
 
+  // ---- 学びメモ ----
+
+  function saveNotes() {
+    storage.setItem(NOTES_KEY, JSON.stringify(notes));
+  }
+
+  function extractTags(text) {
+    return [...new Set((text.match(/#[^\s#]+/g) || []).map((t) => t.slice(1)))];
+  }
+
+  function addNote(text) {
+    notes.push({
+      id: uid(),
+      text,
+      tags: extractTags(text),
+      date: todayStr(),
+      createdAt: Date.now(),
+    });
+    saveNotes();
+    // メモを書くことも立派な1件。ストリーク・XPにカウントする
+    recordComplete();
+    showToast("📝 記録した!未来の自分が喜ぶやつ");
+    render();
+  }
+
+  function deleteNote(note) {
+    notes = notes.filter((n) => n.id !== note.id);
+    saveNotes();
+    recordUncomplete(note.date);
+    if (flashbackNote && flashbackNote.id === note.id) flashbackNote = null;
+    render();
+  }
+
+  function dateHeading(dateKey) {
+    const today = todayStr();
+    if (dateKey === today) return "今日";
+    const d = new Date(dateKey + "T00:00:00");
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (dateKey === dateStr(yesterday)) return "昨日";
+    const base = `${d.getMonth() + 1}月${d.getDate()}日(${WEEKDAYS[d.getDay()]})`;
+    return d.getFullYear() === new Date().getFullYear()
+      ? base
+      : `${d.getFullYear()}年${base}`;
+  }
+
+  // #タグ部分だけ色を付けて本文を描画する
+  function renderNoteBody(container, text) {
+    const re = /#[^\s#]+/g;
+    let last = 0;
+    let m;
+    while ((m = re.exec(text))) {
+      if (m.index > last) {
+        container.appendChild(document.createTextNode(text.slice(last, m.index)));
+      }
+      container.appendChild(el("span", "note-tag-inline", m[0]));
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) {
+      container.appendChild(document.createTextNode(text.slice(last)));
+    }
+  }
+
+  function buildNoteCard(note, highlight) {
+    const card = el("div", "note-card" + (highlight ? " note-flash" : ""));
+
+    if (editingNoteId === note.id && !highlight) {
+      const ta = document.createElement("textarea");
+      ta.className = "note-edit-area";
+      ta.value = note.text;
+      ta.rows = 3;
+      ta.maxLength = 2000;
+      const row = el("div", "note-form-row");
+      const saveBtn = el("button", "btn-primary btn-small", "保存");
+      saveBtn.type = "button";
+      saveBtn.addEventListener("click", () => {
+        const v = ta.value.trim();
+        if (v) {
+          note.text = v;
+          note.tags = extractTags(v);
+          saveNotes();
+        }
+        editingNoteId = null;
+        render();
+      });
+      const cancelBtn = el("button", "btn-secondary btn-small", "キャンセル");
+      cancelBtn.type = "button";
+      cancelBtn.addEventListener("click", () => {
+        editingNoteId = null;
+        render();
+      });
+      row.appendChild(cancelBtn);
+      row.appendChild(saveBtn);
+      card.appendChild(ta);
+      card.appendChild(row);
+      requestAnimationFrame(() => ta.focus());
+      return card;
+    }
+
+    const body = el("div", "note-body");
+    renderNoteBody(body, note.text);
+    card.appendChild(body);
+
+    const foot = el("div", "note-foot");
+    const time = new Date(note.createdAt);
+    const timeLabel = highlight
+      ? `${dateHeading(note.date)} のメモ`
+      : `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}`;
+    foot.appendChild(el("span", "note-time", timeLabel));
+    const spacer = el("span", "note-spacer");
+    foot.appendChild(spacer);
+
+    if (highlight) {
+      const close = el("button", "step-del", "✕ 閉じる");
+      close.type = "button";
+      close.addEventListener("click", () => {
+        flashbackNote = null;
+        render();
+      });
+      foot.appendChild(close);
+    } else {
+      const editBtn = el("button", "note-act", "✏️");
+      editBtn.type = "button";
+      editBtn.title = "編集";
+      editBtn.addEventListener("click", () => {
+        editingNoteId = note.id;
+        render();
+      });
+      const delBtn = el("button", "note-act", "🗑️");
+      delBtn.type = "button";
+      delBtn.title = "削除";
+      delBtn.addEventListener("click", () => {
+        if (delBtn.dataset.armed) {
+          deleteNote(note);
+        } else {
+          delBtn.dataset.armed = "1";
+          delBtn.textContent = "本当に削除?";
+          setTimeout(() => {
+            delete delBtn.dataset.armed;
+            delBtn.textContent = "🗑️";
+          }, 3000);
+        }
+      });
+      foot.appendChild(editBtn);
+      foot.appendChild(delBtn);
+    }
+    card.appendChild(foot);
+    return card;
+  }
+
+  function renderNotes() {
+    // タグチップ(使用回数順、上位12個)
+    noteTagsBox.innerHTML = "";
+    const counts = {};
+    for (const n of notes) for (const t of n.tags) counts[t] = (counts[t] || 0) + 1;
+    const topTags = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12);
+    if (noteTag && !counts[noteTag]) noteTag = null;
+    for (const [tag, count] of topTags) {
+      const chip = el(
+        "button",
+        "note-tag-chip" + (noteTag === tag ? " active" : ""),
+        `#${tag} (${count})`,
+      );
+      chip.type = "button";
+      chip.addEventListener("click", () => {
+        noteTag = noteTag === tag ? null : tag;
+        noteLimit = NOTE_PAGE;
+        render();
+      });
+      noteTagsBox.appendChild(chip);
+    }
+
+    // 振り返りカード
+    flashbackBox.innerHTML = "";
+    flashbackBox.hidden = !flashbackNote;
+    if (flashbackNote) {
+      flashbackBox.appendChild(el("div", "flashback-label", "⏪ この日の自分"));
+      flashbackBox.appendChild(buildNoteCard(flashbackNote, true));
+    }
+
+    // 絞り込み + 新しい順
+    const q = noteQuery.toLowerCase();
+    const visible = notes
+      .filter((n) => {
+        if (noteTag && !n.tags.includes(noteTag)) return false;
+        if (q && !n.text.toLowerCase().includes(q)) return false;
+        return true;
+      })
+      .sort((a, b) => b.createdAt - a.createdAt);
+
+    notesEmpty.hidden = notes.length > 0;
+    noteMoreBtn.hidden = visible.length <= noteLimit;
+
+    noteList.innerHTML = "";
+    let currentDate = null;
+    for (const note of visible.slice(0, noteLimit)) {
+      if (note.date !== currentDate) {
+        currentDate = note.date;
+        noteList.appendChild(el("div", "note-day-heading", dateHeading(currentDate)));
+      }
+      noteList.appendChild(buildNoteCard(note, false));
+    }
+    if (visible.length === 0 && notes.length > 0) {
+      noteList.appendChild(el("div", "m-note", "条件に合うメモがありません"));
+    }
+  }
+
   // ---- タスク ----
 
   function visibleTasks() {
@@ -704,6 +931,7 @@
 
     renderMomentum();
     renderGoals();
+    renderNotes();
   }
 
   function addTask(title, due, priority, repeat) {
@@ -818,6 +1046,52 @@
   clearCompletedBtn.addEventListener("click", () => {
     tasks = tasks.filter((t) => t.repeat || !t.completed);
     save();
+    render();
+  });
+
+  noteForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = noteText.value.trim();
+    if (!text) return;
+    addNote(text);
+    noteForm.reset();
+    noteText.focus();
+  });
+
+  noteText.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      noteForm.requestSubmit();
+    }
+  });
+
+  noteSearch.addEventListener("input", () => {
+    noteQuery = noteSearch.value.trim();
+    noteLimit = NOTE_PAGE;
+    render();
+  });
+
+  noteFlashbackBtn.addEventListener("click", () => {
+    const today = todayStr();
+    const past = notes.filter((n) => n.date < today);
+    const pool = past.length ? past : notes;
+    if (!pool.length) {
+      showToast("まだ過去のメモがない。今日から書こう!");
+      return;
+    }
+    // 同じメモが連続で出ないように選び直す
+    let pick = pool[Math.floor(Math.random() * pool.length)];
+    if (flashbackNote && pool.length > 1) {
+      while (pick.id === flashbackNote.id) {
+        pick = pool[Math.floor(Math.random() * pool.length)];
+      }
+    }
+    flashbackNote = pick;
+    render();
+  });
+
+  noteMoreBtn.addEventListener("click", () => {
+    noteLimit += 30;
     render();
   });
 
