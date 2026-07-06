@@ -38,6 +38,37 @@
       </div>
     </section>
 
+    <section class="goals" aria-label="長期目標">
+      <div class="goals-header">
+        <h2>🎯 長期目標</h2>
+        <button type="button" id="add-goal-btn" class="btn-secondary">+ 目標を追加</button>
+      </div>
+      <form id="goal-form" class="goal-form" autocomplete="off" hidden>
+        <input type="text" id="goal-title" placeholder="例: TOEIC600点" required maxlength="100">
+        <div class="form-options">
+          <label>
+            カテゴリ
+            <select id="goal-category">
+              <option value="exam">試験・資格</option>
+              <option value="learning">学習・スキル</option>
+              <option value="exercise">運動・体づくり</option>
+              <option value="reading">読書</option>
+              <option value="money">貯金・お金</option>
+              <option value="generic">その他</option>
+            </select>
+          </label>
+          <label>
+            目標日
+            <input type="date" id="goal-date">
+          </label>
+          <button type="submit" class="btn-primary">プランを自動作成</button>
+        </div>
+        <p class="goal-hint">面倒な手順の分解はおまかせ。カテゴリに合わせて「やることリスト」を自動で作ります(あとから自由に編集できます)</p>
+      </form>
+      <p id="goals-empty" class="goals-empty">「TOEIC600点」みたいな大きな目標も、分解すればただの小さなタスクの集まり。<br>「+ 目標を追加」でプランを自動で作ってみよう</p>
+      <div id="goal-list" class="goal-list"></div>
+    </section>
+
     <form id="task-form" class="task-form" autocomplete="off">
       <input type="text" id="task-title" placeholder="新しいタスクを入力..." required maxlength="200">
       <div class="form-options">
