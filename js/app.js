@@ -1412,7 +1412,20 @@
     render();
   }
 
+  // 「今日完了した」タスクを削除するときは今日の記録・XPも巻き戻す。
+  // 昨日以前の完了分は、実際にやった記録なので削除しても保持する
+  function rollbackTodayCompletion(task) {
+    const today = todayStr();
+    if (task.repeat === "daily") {
+      if ((task.doneDates || []).includes(today)) recordUncomplete(today);
+    } else if (task.completed && task.completedOn === today) {
+      recordUncomplete(today);
+    }
+  }
+
   function remove(id) {
+    const task = tasks.find((t) => t.id === id);
+    if (task) rollbackTodayCompletion(task);
     tasks = tasks.filter((t) => t.id !== id);
     save();
     render();
@@ -1469,6 +1482,9 @@
   });
 
   clearCompletedBtn.addEventListener("click", () => {
+    for (const t of tasks) {
+      if (!t.repeat && t.completed) rollbackTodayCompletion(t);
+    }
     tasks = tasks.filter((t) => t.repeat || !t.completed);
     save();
     render();
