@@ -100,12 +100,22 @@
             </select>
           </label>
           <label>
+            周回数
+            <select id="material-laps">
+              <option value="1">1周</option>
+              <option value="2">2周</option>
+              <option value="3" selected>3周(推奨)</option>
+              <option value="4">4周</option>
+              <option value="5">5周</option>
+            </select>
+          </label>
+          <label>
             目標日
             <input type="date" id="material-date">
           </label>
           <button type="submit" class="btn-primary">追加</button>
         </div>
-        <p class="goal-hint">問題集・参考書・動画講座など「全部で◯◯ある」ものなら何でも。進めた分だけ記録すればペースは自動計算します</p>
+        <p class="goal-hint">1周だと忘れるので3周が前提。復習は速く回せるぶん、各周の締切目安は 1 : 0.6 : 0.4 の配分で自動計算します</p>
       </form>
       <div id="material-list" class="goal-list"></div>
     </section>
