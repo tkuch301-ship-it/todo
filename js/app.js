@@ -194,6 +194,7 @@
   const materialName = document.getElementById("material-name");
   const materialTotal = document.getElementById("material-total");
   const materialUnit = document.getElementById("material-unit");
+  const materialLaps = document.getElementById("material-laps");
   const materialDate = document.getElementById("material-date");
   const materialList = document.getElementById("material-list");
 
@@ -590,6 +591,33 @@
     storage.setItem(MATERIALS_KEY, JSON.stringify(materials));
   }
 
+  // 旧データ(周回なし)の移行: 完走済みは1周扱い、進行中は3周前提にする
+  let materialsMigrated = false;
+  for (const m of materials) {
+    if (!m.laps) {
+      m.laps = m.current >= m.total ? 1 : 3;
+      m.lap = 1;
+      materialsMigrated = true;
+    }
+  }
+  if (materialsMigrated) saveMaterials();
+
+  // 復習の周は速く回せるので、周ごとの所要時間の重み(1周目=1, 2周目=0.6, 3周目以降=0.4)
+  function lapWeight(lap) {
+    return lap === 1 ? 1 : lap === 2 ? 0.6 : 0.4;
+  }
+
+  function isMaterialFinished(m) {
+    return m.lap >= m.laps && m.current >= m.total;
+  }
+
+  function overallPct(m) {
+    return Math.min(
+      100,
+      Math.round(((m.lap - 1 + m.current / m.total) / m.laps) * 100),
+    );
+  }
+
   function daysUntil(dateKey) {
     return Math.ceil((new Date(dateKey) - new Date(todayStr())) / 86400000);
   }
@@ -610,7 +638,18 @@
         recordComplete();
       }
       if (material.current >= material.total) {
-        goalFanfare(material.name);
+        if (material.lap >= material.laps) {
+          // 最終周の完走
+          goalFanfare(`${material.name}(${material.laps}周)`);
+        } else {
+          // 周回完走 → 次の周を自動スタート
+          material.lapHistory = material.lapHistory || [];
+          material.lapHistory.push({ lap: material.lap, date: today });
+          material.lap++;
+          material.current = 0;
+          showToast(`🎉 ${material.lap - 1}周目完走!次は${material.lap}周目、もっと速く回せるはず`);
+          confetti();
+        }
       } else if (firstToday) {
         celebrate();
       } else {
@@ -631,11 +670,37 @@
       .reduce((sum, e) => sum + e.delta, 0);
   }
 
+  // 各周の締切目安を目標日から重み配分で逆算する
+  function lapSchedule(material) {
+    if (!material.targetDate) return null;
+    const days = daysUntil(material.targetDate);
+    if (days <= 0) return null;
+    const remainingCurrentLap =
+      lapWeight(material.lap) * ((material.total - material.current) / material.total);
+    let totalWeight = remainingCurrentLap;
+    for (let j = material.lap + 1; j <= material.laps; j++) totalWeight += lapWeight(j);
+    if (totalWeight <= 0) return null;
+
+    const fmt = (offset) => {
+      const d = new Date();
+      d.setDate(d.getDate() + offset);
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    };
+    const daysCurrent = Math.max(1, Math.round((days * remainingCurrentLap) / totalWeight));
+    const schedule = { daysCurrent, currentDeadline: fmt(daysCurrent), future: [] };
+    let cum = daysCurrent;
+    for (let j = material.lap + 1; j <= material.laps; j++) {
+      cum += Math.max(1, Math.round((days * lapWeight(j)) / totalWeight));
+      schedule.future.push({ lap: j, deadline: fmt(Math.min(cum, days)) });
+    }
+    return schedule;
+  }
+
   function buildMaterialCard(material) {
     const total = material.total;
     const current = material.current;
     const pct = Math.min(100, Math.round((current / total) * 100));
-    const finished = current >= total;
+    const finished = isMaterialFinished(material);
     const card = el("div", "goal-card" + (finished ? " goal-achieved" : ""));
 
     if (editingMaterialId === material.id) {
@@ -653,6 +718,14 @@
       const dateIn = document.createElement("input");
       dateIn.type = "date";
       dateIn.value = material.targetDate || "";
+      const lapsIn = document.createElement("select");
+      for (let i = 1; i <= 5; i++) {
+        const opt = document.createElement("option");
+        opt.value = String(i);
+        opt.textContent = `${i}周`;
+        opt.selected = material.laps === i;
+        lapsIn.appendChild(opt);
+      }
       const saveBtn = el("button", "btn-primary btn-small", "保存");
       saveBtn.type = "button";
       saveBtn.addEventListener("click", () => {
@@ -663,6 +736,8 @@
           material.total = newTotal;
           material.current = Math.min(material.current, newTotal);
         }
+        material.laps = parseInt(lapsIn.value, 10);
+        material.lap = Math.min(material.lap, material.laps);
         material.targetDate = dateIn.value;
         editingMaterialId = null;
         saveMaterials();
@@ -676,9 +751,12 @@
       });
       const totalLabel = el("label", null, "全体量");
       totalLabel.appendChild(totalIn);
+      const lapsLabel = el("label", null, "周回数");
+      lapsLabel.appendChild(lapsIn);
       const dateLabel = el("label", null, "目標日");
       dateLabel.appendChild(dateIn);
       row.appendChild(totalLabel);
+      row.appendChild(lapsLabel);
       row.appendChild(dateLabel);
       row.appendChild(cancelBtn);
       row.appendChild(saveBtn);
@@ -688,7 +766,18 @@
     }
 
     const head = el("div", "goal-head");
-    head.appendChild(el("strong", "goal-title", (finished ? "🎉 " : "📖 ") + material.name));
+    const titleWrap = el("div", "material-title-wrap");
+    titleWrap.appendChild(
+      el("strong", "goal-title", (finished ? "🎉 " : "📖 ") + material.name),
+    );
+    titleWrap.appendChild(
+      el(
+        "span",
+        "lap-badge" + (finished ? " lap-done" : ""),
+        finished ? `${material.laps}周完走` : `${material.lap}周目 / ${material.laps}周`,
+      ),
+    );
+    head.appendChild(titleWrap);
     const btns = el("div", "task-actions");
     const editBtn = el("button", null, "✏️");
     editBtn.type = "button";
@@ -726,26 +815,51 @@
     bar.appendChild(fill);
     progressRow.appendChild(bar);
     progressRow.appendChild(
-      el("span", "goal-progress-num", `${current} / ${total}${material.unit} (${pct}%)`),
+      el(
+        "span",
+        "goal-progress-num",
+        `${current} / ${total}${material.unit} (${pct}%)` +
+          (material.laps > 1 ? ` ・全体${overallPct(material)}%` : ""),
+      ),
     );
     card.appendChild(progressRow);
 
-    // ペース情報
+    // ペース情報(周回ごとの締切目安を含む)
     const paceLines = [];
     const remaining = total - current;
     if (finished) {
-      paceLines.push("完走!おつかれさま🎉");
+      paceLines.push(`${material.laps}周完走!もう忘れない🎉`);
     } else {
       if (material.targetDate) {
         const days = daysUntil(material.targetDate);
-        if (days < 0) paceLines.push(`目標日を${-days}日超過!今日から巻き返そう`);
-        else if (days === 0) paceLines.push("今日が目標日!");
-        else paceLines.push(`あと${days}日・1日${Math.ceil(remaining / days)}${material.unit}でOK`);
+        if (days < 0) {
+          paceLines.push(`目標日を${-days}日超過!今日から巻き返そう`);
+        } else if (days === 0) {
+          paceLines.push("今日が目標日!");
+        } else {
+          const schedule = lapSchedule(material);
+          if (schedule) {
+            const perDay = Math.ceil(remaining / schedule.daysCurrent);
+            if (material.laps === 1) {
+              paceLines.push(`あと${days}日・1日${perDay}${material.unit}でOK`);
+            } else {
+              paceLines.push(
+                `${material.lap}周目は${schedule.currentDeadline}までに` +
+                  `（1日${perDay}${material.unit}）`,
+              );
+              if (schedule.future.length) {
+                paceLines.push(
+                  schedule.future.map((f) => `${f.lap}周目→${f.deadline}`).join("・"),
+                );
+              }
+            }
+          }
+        }
       }
       const week = recentPace(material);
       if (week > 0) {
         const eta = Math.ceil(remaining / (week / 7));
-        paceLines.push(`直近7日で+${week}${material.unit}(このペースなら約${eta}日で完走)`);
+        paceLines.push(`直近7日で+${week}${material.unit}(この周はあと約${eta}日)`);
       }
     }
     if (paceLines.length) card.appendChild(el("div", "m-note", paceLines.join(" / ")));
@@ -817,8 +931,13 @@
       }
     }
     for (const m of materials) {
-      if (m.targetDate && m.current < m.total) {
-        items.push({ icon: "📚", type: "教材", title: m.name, date: m.targetDate });
+      if (m.targetDate && !isMaterialFinished(m)) {
+        items.push({
+          icon: "📚",
+          type: "教材",
+          title: m.laps > 1 ? `${m.name}(${m.lap}周目)` : m.name,
+          date: m.targetDate,
+        });
       }
     }
     items.sort((a, b) => a.date.localeCompare(b.date));
@@ -837,6 +956,7 @@
   function renderDeadlines() {
     const items = collectDeadlines();
     deadlineSection.hidden = items.length === 0;
+    deadlineList.innerHTML = "";
 
     // タブタイトルに緊急件数バッジ(今日締切+超過)
     const urgent = items.filter((i) => daysUntil(i.date) <= 0).length;
@@ -849,7 +969,6 @@
       ? "たたむ"
       : `すべて見る(${items.length}件)`;
 
-    deadlineList.innerHTML = "";
     for (const item of shown) {
       const days = daysUntil(item.date);
       const chip = deadlineChip(days);
@@ -1416,6 +1535,8 @@
       name,
       total,
       unit: materialUnit.value,
+      laps: parseInt(materialLaps.value, 10),
+      lap: 1,
       targetDate: materialDate.value,
       current: 0,
       log: [],

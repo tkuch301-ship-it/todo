@@ -314,6 +314,29 @@ body {
   margin-left: auto;
 }
 
+.material-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.lap-badge {
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  white-space: nowrap;
+}
+
+.lap-badge.lap-done {
+  color: var(--medium);
+  border-color: var(--medium);
+}
+
 .material-edit-name {
   width: 100%;
   padding: 0.6rem;
