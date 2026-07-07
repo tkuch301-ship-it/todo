@@ -38,6 +38,14 @@
       </div>
     </section>
 
+    <section class="deadlines" id="deadline-section" hidden aria-label="締め切り">
+      <div class="goals-header">
+        <h2>⏰ 締め切りレーダー</h2>
+        <button type="button" id="deadline-toggle" class="btn-text" hidden>すべて見る</button>
+      </div>
+      <ul id="deadline-list" class="deadline-list"></ul>
+    </section>
+
     <section class="goals" aria-label="長期目標">
       <div class="goals-header">
         <h2>🎯 長期目標</h2>
@@ -67,6 +75,39 @@
       </form>
       <p id="goals-empty" class="goals-empty">「TOEIC600点」みたいな大きな目標も、分解すればただの小さなタスクの集まり。<br>「+ 目標を追加」でプランを自動で作ってみよう</p>
       <div id="goal-list" class="goal-list"></div>
+    </section>
+
+    <section class="materials" aria-label="教材の進捗">
+      <div class="goals-header">
+        <h2>📚 教材の進捗</h2>
+        <button type="button" id="add-material-btn" class="btn-secondary">+ 教材を追加</button>
+      </div>
+      <form id="material-form" class="goal-form" autocomplete="off" hidden>
+        <input type="text" id="material-name" placeholder="例: 金のフレーズ" required maxlength="100">
+        <div class="form-options">
+          <label>
+            全体量
+            <input type="number" id="material-total" min="1" max="99999" required placeholder="300">
+          </label>
+          <label>
+            単位
+            <select id="material-unit">
+              <option>ページ</option>
+              <option>章</option>
+              <option>問</option>
+              <option>レッスン</option>
+              <option>回</option>
+            </select>
+          </label>
+          <label>
+            目標日
+            <input type="date" id="material-date">
+          </label>
+          <button type="submit" class="btn-primary">追加</button>
+        </div>
+        <p class="goal-hint">問題集・参考書・動画講座など「全部で◯◯ある」ものなら何でも。進めた分だけ記録すればペースは自動計算します</p>
+      </form>
+      <div id="material-list" class="goal-list"></div>
     </section>
 
     <form id="task-form" class="task-form" autocomplete="off">

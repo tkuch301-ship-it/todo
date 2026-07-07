@@ -5,6 +5,7 @@
   const META_KEY = "todo-meta-v1";
   const GOALS_KEY = "todo-goals-v1";
   const NOTES_KEY = "todo-notes-v1";
+  const MATERIALS_KEY = "todo-materials-v1";
   const NOTE_PAGE = 20;
   const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
   const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
@@ -136,7 +137,10 @@
   let meta = Object.assign({ xp: 0, log: {} }, loadJSON(META_KEY));
   let goals = loadJSON(GOALS_KEY) || [];
   let notes = loadJSON(NOTES_KEY) || [];
+  let materials = loadJSON(MATERIALS_KEY) || [];
   let filter = "all";
+  let editingMaterialId = null;
+  let deadlineExpanded = false;
   let query = "";
   let sortBy = "created";
   let editingId = null;
@@ -182,6 +186,16 @@
   const noteList = document.getElementById("note-list");
   const notesEmpty = document.getElementById("notes-empty");
   const noteMoreBtn = document.getElementById("note-more");
+  const deadlineSection = document.getElementById("deadline-section");
+  const deadlineList = document.getElementById("deadline-list");
+  const deadlineToggle = document.getElementById("deadline-toggle");
+  const addMaterialBtn = document.getElementById("add-material-btn");
+  const materialForm = document.getElementById("material-form");
+  const materialName = document.getElementById("material-name");
+  const materialTotal = document.getElementById("material-total");
+  const materialUnit = document.getElementById("material-unit");
+  const materialDate = document.getElementById("material-date");
+  const materialList = document.getElementById("material-list");
 
   function loadJSON(key) {
     try {
@@ -570,6 +584,296 @@
     }
   }
 
+  // ---- 教材の進捗 ----
+
+  function saveMaterials() {
+    storage.setItem(MATERIALS_KEY, JSON.stringify(materials));
+  }
+
+  function daysUntil(dateKey) {
+    return Math.ceil((new Date(dateKey) - new Date(todayStr())) / 86400000);
+  }
+
+  // 進捗の更新。XPは「1教材につき1日1回」だけ付与する(連打での稼ぎ防止)
+  function updateMaterialProgress(material, newCurrent) {
+    newCurrent = Math.max(0, Math.min(material.total, newCurrent));
+    const delta = newCurrent - material.current;
+    if (delta === 0) return;
+    const today = todayStr();
+    material.current = newCurrent;
+    material.log = material.log || [];
+    material.log.push({ date: today, delta });
+    if (delta > 0) {
+      const firstToday = material.lastXpDate !== today;
+      if (firstToday) {
+        material.lastXpDate = today;
+        recordComplete();
+      }
+      if (material.current >= material.total) {
+        goalFanfare(material.name);
+      } else if (firstToday) {
+        celebrate();
+      } else {
+        showToast(`📖 +${delta}${material.unit}!積み上がってる!`);
+      }
+    }
+    saveMaterials();
+    render();
+  }
+
+  function recentPace(material) {
+    if (!material.log) return 0;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 6);
+    const cutoffKey = dateStr(cutoff);
+    return material.log
+      .filter((e) => e.date >= cutoffKey)
+      .reduce((sum, e) => sum + e.delta, 0);
+  }
+
+  function buildMaterialCard(material) {
+    const total = material.total;
+    const current = material.current;
+    const pct = Math.min(100, Math.round((current / total) * 100));
+    const finished = current >= total;
+    const card = el("div", "goal-card" + (finished ? " goal-achieved" : ""));
+
+    if (editingMaterialId === material.id) {
+      const nameIn = document.createElement("input");
+      nameIn.type = "text";
+      nameIn.value = material.name;
+      nameIn.maxLength = 100;
+      nameIn.className = "material-edit-name";
+      const row = el("div", "form-options");
+      const totalIn = document.createElement("input");
+      totalIn.type = "number";
+      totalIn.min = "1";
+      totalIn.max = "99999";
+      totalIn.value = total;
+      const dateIn = document.createElement("input");
+      dateIn.type = "date";
+      dateIn.value = material.targetDate || "";
+      const saveBtn = el("button", "btn-primary btn-small", "保存");
+      saveBtn.type = "button";
+      saveBtn.addEventListener("click", () => {
+        const name = nameIn.value.trim();
+        const newTotal = parseInt(totalIn.value, 10);
+        if (name) material.name = name;
+        if (newTotal >= 1) {
+          material.total = newTotal;
+          material.current = Math.min(material.current, newTotal);
+        }
+        material.targetDate = dateIn.value;
+        editingMaterialId = null;
+        saveMaterials();
+        render();
+      });
+      const cancelBtn = el("button", "btn-secondary btn-small", "キャンセル");
+      cancelBtn.type = "button";
+      cancelBtn.addEventListener("click", () => {
+        editingMaterialId = null;
+        render();
+      });
+      const totalLabel = el("label", null, "全体量");
+      totalLabel.appendChild(totalIn);
+      const dateLabel = el("label", null, "目標日");
+      dateLabel.appendChild(dateIn);
+      row.appendChild(totalLabel);
+      row.appendChild(dateLabel);
+      row.appendChild(cancelBtn);
+      row.appendChild(saveBtn);
+      card.appendChild(nameIn);
+      card.appendChild(row);
+      return card;
+    }
+
+    const head = el("div", "goal-head");
+    head.appendChild(el("strong", "goal-title", (finished ? "🎉 " : "📖 ") + material.name));
+    const btns = el("div", "task-actions");
+    const editBtn = el("button", null, "✏️");
+    editBtn.type = "button";
+    editBtn.title = "編集";
+    editBtn.addEventListener("click", () => {
+      editingMaterialId = material.id;
+      render();
+    });
+    const delBtn = el("button", "goal-del", "🗑️");
+    delBtn.type = "button";
+    delBtn.title = "教材を削除";
+    delBtn.addEventListener("click", () => {
+      if (delBtn.dataset.armed) {
+        materials = materials.filter((m) => m.id !== material.id);
+        saveMaterials();
+        render();
+      } else {
+        delBtn.dataset.armed = "1";
+        delBtn.textContent = "本当に削除?";
+        setTimeout(() => {
+          delete delBtn.dataset.armed;
+          delBtn.textContent = "🗑️";
+        }, 3000);
+      }
+    });
+    btns.appendChild(editBtn);
+    btns.appendChild(delBtn);
+    head.appendChild(btns);
+    card.appendChild(head);
+
+    const progressRow = el("div", "goal-progress-row");
+    const bar = el("div", "bar bar-goal");
+    const fill = el("div");
+    fill.style.width = `${pct}%`;
+    bar.appendChild(fill);
+    progressRow.appendChild(bar);
+    progressRow.appendChild(
+      el("span", "goal-progress-num", `${current} / ${total}${material.unit} (${pct}%)`),
+    );
+    card.appendChild(progressRow);
+
+    // ペース情報
+    const paceLines = [];
+    const remaining = total - current;
+    if (finished) {
+      paceLines.push("完走!おつかれさま🎉");
+    } else {
+      if (material.targetDate) {
+        const days = daysUntil(material.targetDate);
+        if (days < 0) paceLines.push(`目標日を${-days}日超過!今日から巻き返そう`);
+        else if (days === 0) paceLines.push("今日が目標日!");
+        else paceLines.push(`あと${days}日・1日${Math.ceil(remaining / days)}${material.unit}でOK`);
+      }
+      const week = recentPace(material);
+      if (week > 0) {
+        const eta = Math.ceil(remaining / (week / 7));
+        paceLines.push(`直近7日で+${week}${material.unit}(このペースなら約${eta}日で完走)`);
+      }
+    }
+    if (paceLines.length) card.appendChild(el("div", "m-note", paceLines.join(" / ")));
+
+    // 進捗の更新コントロール
+    if (!finished) {
+      const controls = el("div", "material-controls");
+      for (const step of [1, 5, 10]) {
+        const b = el("button", "btn-secondary btn-small", `+${step}`);
+        b.type = "button";
+        b.addEventListener("click", () => updateMaterialProgress(material, current + step));
+        controls.appendChild(b);
+      }
+      const posIn = document.createElement("input");
+      posIn.type = "number";
+      posIn.min = "0";
+      posIn.max = String(total);
+      posIn.value = current;
+      posIn.setAttribute("aria-label", "現在位置");
+      const setBtn = el("button", "btn-primary btn-small", "ここまで進んだ");
+      setBtn.type = "button";
+      const commitPos = () => {
+        const v = parseInt(posIn.value, 10);
+        if (!Number.isNaN(v)) updateMaterialProgress(material, v);
+      };
+      setBtn.addEventListener("click", commitPos);
+      posIn.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commitPos();
+        }
+      });
+      controls.appendChild(posIn);
+      controls.appendChild(setBtn);
+      card.appendChild(controls);
+    }
+
+    return card;
+  }
+
+  function renderMaterials() {
+    materialList.innerHTML = "";
+    for (const material of materials) {
+      materialList.appendChild(buildMaterialCard(material));
+    }
+    if (!materials.length) {
+      const empty = el(
+        "div",
+        "goals-empty",
+        "問題集・参考書・動画講座を登録すると、進捗バーと「1日◯ページでOK」のペース計算で完走まで伴走します",
+      );
+      materialList.appendChild(empty);
+    }
+  }
+
+  // ---- 締め切りレーダー ----
+
+  function collectDeadlines() {
+    const items = [];
+    for (const t of tasks) {
+      if (t.due && !isDone(t)) {
+        items.push({ icon: "📌", type: "タスク", title: t.title, date: t.due });
+      }
+    }
+    for (const g of goals) {
+      const achieved = g.steps.length > 0 && g.steps.every((s) => s.done);
+      if (g.targetDate && !achieved) {
+        items.push({ icon: "🎯", type: "目標", title: g.title, date: g.targetDate });
+      }
+    }
+    for (const m of materials) {
+      if (m.targetDate && m.current < m.total) {
+        items.push({ icon: "📚", type: "教材", title: m.name, date: m.targetDate });
+      }
+    }
+    items.sort((a, b) => a.date.localeCompare(b.date));
+    return items;
+  }
+
+  function deadlineChip(days) {
+    if (days < 0) return { label: `${-days}日超過`, cls: "dl-overdue" };
+    if (days === 0) return { label: "今日!", cls: "dl-today" };
+    if (days === 1) return { label: "明日", cls: "dl-today" };
+    if (days <= 3) return { label: `あと${days}日`, cls: "dl-soon" };
+    if (days <= 7) return { label: `あと${days}日`, cls: "dl-week" };
+    return { label: `あと${days}日`, cls: "dl-later" };
+  }
+
+  function renderDeadlines() {
+    const items = collectDeadlines();
+    deadlineSection.hidden = items.length === 0;
+
+    // タブタイトルに緊急件数バッジ(今日締切+超過)
+    const urgent = items.filter((i) => daysUntil(i.date) <= 0).length;
+    document.title = urgent ? `(${urgent}) タスク管理ツール` : "タスク管理ツール";
+    if (!items.length) return;
+
+    const shown = deadlineExpanded ? items : items.slice(0, 5);
+    deadlineToggle.hidden = items.length <= 5;
+    deadlineToggle.textContent = deadlineExpanded
+      ? "たたむ"
+      : `すべて見る(${items.length}件)`;
+
+    deadlineList.innerHTML = "";
+    for (const item of shown) {
+      const days = daysUntil(item.date);
+      const chip = deadlineChip(days);
+      const li = el("li", "deadline-item");
+      li.appendChild(el("span", `dl-chip ${chip.cls}`, chip.label));
+      li.appendChild(el("span", "dl-icon", item.icon));
+      li.appendChild(el("span", "dl-title", item.title));
+      li.appendChild(el("span", "dl-date", item.date.slice(5).replace("-", "/")));
+      deadlineList.appendChild(li);
+    }
+  }
+
+  // ページを開いた瞬間に危ない締め切りを知らせる(1回だけ)
+  function deadlineAlertOnLoad() {
+    const items = collectDeadlines();
+    const overdue = items.filter((i) => daysUntil(i.date) < 0).length;
+    const today = items.filter((i) => daysUntil(i.date) === 0).length;
+    if (!overdue && !today) return;
+    const parts = [];
+    if (today) parts.push(`今日締切${today}件`);
+    if (overdue) parts.push(`${overdue}件が期限超過`);
+    setTimeout(() => showToast(`⏰ ${parts.join("・")}!まず1つ片付けよう`), 600);
+  }
+
   // ---- 学びメモ ----
 
   function saveNotes() {
@@ -931,7 +1235,9 @@
 
     renderMomentum();
     renderGoals();
+    renderMaterials();
     renderNotes();
+    renderDeadlines();
   }
 
   function addTask(title, due, priority, repeat) {
@@ -1095,5 +1401,38 @@
     render();
   });
 
+  addMaterialBtn.addEventListener("click", () => {
+    materialForm.hidden = !materialForm.hidden;
+    if (!materialForm.hidden) materialName.focus();
+  });
+
+  materialForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = materialName.value.trim();
+    const total = parseInt(materialTotal.value, 10);
+    if (!name || !(total >= 1)) return;
+    materials.push({
+      id: uid(),
+      name,
+      total,
+      unit: materialUnit.value,
+      targetDate: materialDate.value,
+      current: 0,
+      log: [],
+      createdAt: Date.now(),
+    });
+    saveMaterials();
+    materialForm.reset();
+    materialForm.hidden = true;
+    showToast("📚 教材を登録した!少しずつ削っていこう");
+    render();
+  });
+
+  deadlineToggle.addEventListener("click", () => {
+    deadlineExpanded = !deadlineExpanded;
+    render();
+  });
+
   render();
+  deadlineAlertOnLoad();
 })();
