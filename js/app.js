@@ -1127,12 +1127,34 @@
     return parseBackup(file.content);
   }
 
-  // 新しい方を正とするシンプルな同期(端末をまたぐ同時編集は新しい方が勝つ)
-  async function syncNow() {
+  function hasLocalData() {
+    return (
+      (loadJSON(STORAGE_KEY) || []).length > 0 ||
+      (loadJSON(GOALS_KEY) || []).length > 0 ||
+      (loadJSON(NOTES_KEY) || []).length > 0 ||
+      (loadJSON(MATERIALS_KEY) || []).length > 0 ||
+      ((loadJSON(META_KEY) || {}).xp || 0) > 0
+    );
+  }
+
+  function hhmm() {
+    const t = new Date();
+    return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+  }
+
+  // 新しい方を正とするシンプルな同期。direction を "push"/"pull" にすると
+  // 自動判定を上書きして、この端末のデータを強制送信/取得する
+  async function syncNow(direction) {
     if (!sync.token || syncing) return;
     syncing = true;
     setSyncStatus("🔄 同期中...");
     try {
+      // 以前から入っているデータには更新時刻が無い(0)ので、初回同期時に付与する。
+      // これが無いと「編集していない既存データ」が一度も送信されない
+      if (getLastMod() === 0 && hasLocalData()) {
+        storage.setItem(LASTMOD_KEY, String(Date.now()));
+      }
+
       if (!sync.gistId) {
         const found = await findGist();
         if (found) {
@@ -1140,8 +1162,11 @@
           saveSync();
         }
       }
+
       if (!sync.gistId) {
-        if (getLastMod() > 0) await pushToGist();
+        // 置き場がまだ無い → この端末のデータで新規作成(データが空でも作る)
+        await pushToGist();
+        setSyncStatus(`⬆️ 送信しました ${hhmm()}`);
       } else {
         let remote = null;
         try {
@@ -1150,7 +1175,8 @@
           if (e.status === 404) {
             sync.gistId = null;
             saveSync();
-            if (getLastMod() > 0) await pushToGist();
+            await pushToGist();
+            setSyncStatus(`⬆️ 送信しました ${hhmm()}`);
           } else {
             throw e;
           }
@@ -1158,16 +1184,19 @@
         if (remote) {
           const localMod = getLastMod();
           const remoteMod = remote.lastModified || 0;
-          if (remoteMod > localMod) applyData(remote);
-          else if (localMod > remoteMod) await pushToGist();
+          if (direction === "pull" || (!direction && remoteMod > localMod)) {
+            applyData(remote);
+            setSyncStatus(`⬇️ 取り込みました ${hhmm()}`);
+          } else if (direction === "push" || localMod > remoteMod) {
+            await pushToGist();
+            setSyncStatus(`⬆️ 送信しました ${hhmm()}`);
+          } else {
+            setSyncStatus(`✅ 最新です ${hhmm()}`);
+          }
         }
       }
       sync.lastSync = Date.now();
       saveSync();
-      const t = new Date();
-      setSyncStatus(
-        `✅ 同期済み ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`,
-      );
     } catch (e) {
       setSyncStatus(`⚠️ 同期エラー: ${e.message}`);
     } finally {
@@ -1773,6 +1802,9 @@
   const syncEnableBtn = document.getElementById("sync-enable");
   const syncNowBtn = document.getElementById("sync-now");
   const syncDisableBtn = document.getElementById("sync-disable");
+  const syncForceRow = document.getElementById("sync-force-row");
+  const syncPushBtn = document.getElementById("sync-push");
+  const syncPullBtn = document.getElementById("sync-pull");
 
   exportCopyBtn.addEventListener("click", async () => {
     const data = exportData();
@@ -1849,6 +1881,7 @@
     syncTokenInput.hidden = enabled;
     syncNowBtn.hidden = !enabled;
     syncDisableBtn.hidden = !enabled;
+    syncForceRow.hidden = !enabled;
     if (!enabled) setSyncStatus("同期は無効(この端末だけに保存)");
   }
 
@@ -1866,6 +1899,8 @@
   });
 
   syncNowBtn.addEventListener("click", () => syncNow());
+  syncPushBtn.addEventListener("click", () => syncNow("push"));
+  syncPullBtn.addEventListener("click", () => syncNow("pull"));
 
   syncDisableBtn.addEventListener("click", () => {
     sync = {};

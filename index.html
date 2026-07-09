@@ -223,6 +223,11 @@
             <button type="button" id="sync-now" class="btn-secondary btn-small" hidden>今すぐ同期</button>
             <button type="button" id="sync-disable" class="btn-text" hidden>解除</button>
           </div>
+          <div id="sync-force-row" class="sync-row" hidden>
+            <button type="button" id="sync-push" class="btn-secondary btn-small">⬆️ この端末を送信</button>
+            <button type="button" id="sync-pull" class="btn-secondary btn-small">⬇️ 最新を取得</button>
+            <span class="m-note">うまく揃わないときは方向を指定(送信=この端末で上書き / 取得=相手で上書き)</span>
+          </div>
           <div id="sync-status" class="m-note"></div>
         </details>
       </div>
