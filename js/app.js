@@ -6,6 +6,10 @@
   const GOALS_KEY = "todo-goals-v1";
   const NOTES_KEY = "todo-notes-v1";
   const MATERIALS_KEY = "todo-materials-v1";
+  const SYNC_KEY = "todo-sync-v1";
+  const LASTMOD_KEY = "todo-lastmod-v1";
+  const DATA_KEYS = [STORAGE_KEY, META_KEY, GOALS_KEY, NOTES_KEY, MATERIALS_KEY];
+  const GIST_FILE = "todo-data.json";
   const NOTE_PAGE = 20;
   const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
   const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
@@ -132,12 +136,12 @@
     }
   })();
 
-  let tasks = loadJSON(STORAGE_KEY) || [];
+  let tasks = [];
   // meta: xp = 累計経験値, log = 日付ごとの完了件数 { "2026-07-06": 2 }
-  let meta = Object.assign({ xp: 0, log: {} }, loadJSON(META_KEY));
-  let goals = loadJSON(GOALS_KEY) || [];
-  let notes = loadJSON(NOTES_KEY) || [];
-  let materials = loadJSON(MATERIALS_KEY) || [];
+  let meta = { xp: 0, log: {} };
+  let goals = [];
+  let notes = [];
+  let materials = [];
   let filter = "all";
   let editingMaterialId = null;
   let deadlineExpanded = false;
@@ -149,6 +153,12 @@
   let noteLimit = 20;
   let editingNoteId = null;
   let flashbackNote = null;
+  // 同期まわり: booting中とリモート反映中はlastModifiedを更新しない
+  let sync = loadJSON(SYNC_KEY) || {};
+  let booting = true;
+  let applyingRemote = false;
+  let syncing = false;
+  let syncTimer = null;
 
   const form = document.getElementById("task-form");
   const titleInput = document.getElementById("task-title");
@@ -206,16 +216,30 @@
     }
   }
 
+  // ユーザー操作による変更のみ更新時刻を記録し、自動同期を予約する
+  function touch() {
+    if (booting || applyingRemote) return;
+    storage.setItem(LASTMOD_KEY, String(Date.now()));
+    scheduleSyncPush();
+  }
+
+  function getLastMod() {
+    return parseInt(storage.getItem(LASTMOD_KEY), 10) || 0;
+  }
+
   function save() {
     storage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    touch();
   }
 
   function saveMeta() {
     storage.setItem(META_KEY, JSON.stringify(meta));
+    touch();
   }
 
   function saveGoals() {
     storage.setItem(GOALS_KEY, JSON.stringify(goals));
+    touch();
   }
 
   function uid() {
@@ -589,18 +613,35 @@
 
   function saveMaterials() {
     storage.setItem(MATERIALS_KEY, JSON.stringify(materials));
+    touch();
   }
 
   // 旧データ(周回なし)の移行: 完走済みは1周扱い、進行中は3周前提にする
-  let materialsMigrated = false;
-  for (const m of materials) {
-    if (!m.laps) {
-      m.laps = m.current >= m.total ? 1 : 3;
-      m.lap = 1;
-      materialsMigrated = true;
+  function migrateMaterials() {
+    let migrated = false;
+    for (const m of materials) {
+      if (!m.laps) {
+        m.laps = m.current >= m.total ? 1 : 3;
+        m.lap = 1;
+        migrated = true;
+      }
     }
+    if (migrated) storage.setItem(MATERIALS_KEY, JSON.stringify(materials));
   }
-  if (materialsMigrated) saveMaterials();
+
+  // localStorageから全状態を読み直す(起動時と同期・インポートの反映時)
+  function loadState() {
+    tasks = loadJSON(STORAGE_KEY) || [];
+    meta = Object.assign({ xp: 0, log: {} }, loadJSON(META_KEY));
+    goals = loadJSON(GOALS_KEY) || [];
+    notes = loadJSON(NOTES_KEY) || [];
+    materials = loadJSON(MATERIALS_KEY) || [];
+    migrateMaterials();
+    editingId = null;
+    editingNoteId = null;
+    editingMaterialId = null;
+    flashbackNote = null;
+  }
 
   // 復習の周は速く回せるので、周ごとの所要時間の重み(1周目=1, 2周目=0.6, 3周目以降=0.4)
   function lapWeight(lap) {
@@ -993,10 +1034,158 @@
     setTimeout(() => showToast(`⏰ ${parts.join("・")}!まず1つ片付けよう`), 600);
   }
 
+  // ---- バックアップと同期 ----
+
+  function saveSync() {
+    storage.setItem(SYNC_KEY, JSON.stringify(sync));
+  }
+
+  function exportData() {
+    return JSON.stringify({
+      app: "todo",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      lastModified: getLastMod(),
+      data: Object.fromEntries(DATA_KEYS.map((k) => [k, loadJSON(k)])),
+    });
+  }
+
+  function applyData(obj) {
+    applyingRemote = true;
+    for (const k of DATA_KEYS) {
+      if (obj.data && k in obj.data && obj.data[k] !== null) {
+        storage.setItem(k, JSON.stringify(obj.data[k]));
+      }
+    }
+    storage.setItem(LASTMOD_KEY, String(obj.lastModified || Date.now()));
+    loadState();
+    applyingRemote = false;
+    render();
+  }
+
+  function parseBackup(text) {
+    const obj = JSON.parse(text);
+    if (obj.app !== "todo" || !obj.data) throw new Error("形式が違う");
+    return obj;
+  }
+
+  const syncStatus = document.getElementById("sync-status");
+
+  function setSyncStatus(message) {
+    if (syncStatus) syncStatus.textContent = message;
+  }
+
+  async function gistRequest(method, url, body) {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${sync.token}`,
+        Accept: "application/vnd.github+json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const reason =
+        res.status === 401 ? "トークンが無効" : res.status === 404 ? "見つからない" : `HTTP ${res.status}`;
+      const err = new Error(reason);
+      err.status = res.status;
+      throw err;
+    }
+    return res.json();
+  }
+
+  // 同じトークンを他の端末に貼るだけで済むよう、既存の同期用Gistを探す
+  async function findGist() {
+    const list = await gistRequest("GET", "https://api.github.com/gists?per_page=100");
+    const mine = list.filter((g) => g.files && g.files[GIST_FILE]);
+    if (!mine.length) return null;
+    mine.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+    return mine[0].id;
+  }
+
+  async function pushToGist() {
+    const content = exportData();
+    if (!sync.gistId) {
+      const g = await gistRequest("POST", "https://api.github.com/gists", {
+        description: "タスク管理ツールのデータ(自動同期)",
+        public: false,
+        files: { [GIST_FILE]: { content } },
+      });
+      sync.gistId = g.id;
+      saveSync();
+    } else {
+      await gistRequest("PATCH", `https://api.github.com/gists/${sync.gistId}`, {
+        files: { [GIST_FILE]: { content } },
+      });
+    }
+  }
+
+  async function pullFromGist() {
+    const g = await gistRequest("GET", `https://api.github.com/gists/${sync.gistId}`);
+    const file = g.files && g.files[GIST_FILE];
+    if (!file) throw new Error("同期データが空");
+    return parseBackup(file.content);
+  }
+
+  // 新しい方を正とするシンプルな同期(端末をまたぐ同時編集は新しい方が勝つ)
+  async function syncNow() {
+    if (!sync.token || syncing) return;
+    syncing = true;
+    setSyncStatus("🔄 同期中...");
+    try {
+      if (!sync.gistId) {
+        const found = await findGist();
+        if (found) {
+          sync.gistId = found;
+          saveSync();
+        }
+      }
+      if (!sync.gistId) {
+        if (getLastMod() > 0) await pushToGist();
+      } else {
+        let remote = null;
+        try {
+          remote = await pullFromGist();
+        } catch (e) {
+          if (e.status === 404) {
+            sync.gistId = null;
+            saveSync();
+            if (getLastMod() > 0) await pushToGist();
+          } else {
+            throw e;
+          }
+        }
+        if (remote) {
+          const localMod = getLastMod();
+          const remoteMod = remote.lastModified || 0;
+          if (remoteMod > localMod) applyData(remote);
+          else if (localMod > remoteMod) await pushToGist();
+        }
+      }
+      sync.lastSync = Date.now();
+      saveSync();
+      const t = new Date();
+      setSyncStatus(
+        `✅ 同期済み ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`,
+      );
+    } catch (e) {
+      setSyncStatus(`⚠️ 同期エラー: ${e.message}`);
+    } finally {
+      syncing = false;
+    }
+  }
+
+  function scheduleSyncPush() {
+    if (!sync.token) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => syncNow(), 2500);
+  }
+
   // ---- 学びメモ ----
 
   function saveNotes() {
     storage.setItem(NOTES_KEY, JSON.stringify(notes));
+    touch();
   }
 
   function extractTags(text) {
@@ -1570,6 +1759,131 @@
     render();
   });
 
+  // ---- バックアップ・同期のUI ----
+
+  const exportCopyBtn = document.getElementById("export-copy");
+  const exportFileBtn = document.getElementById("export-file");
+  const importBtn = document.getElementById("import-btn");
+  const importArea = document.getElementById("import-area");
+  const importText = document.getElementById("import-text");
+  const importFileBtn = document.getElementById("import-file-btn");
+  const importFileInput = document.getElementById("import-file");
+  const importApply = document.getElementById("import-apply");
+  const syncTokenInput = document.getElementById("sync-token");
+  const syncEnableBtn = document.getElementById("sync-enable");
+  const syncNowBtn = document.getElementById("sync-now");
+  const syncDisableBtn = document.getElementById("sync-disable");
+
+  exportCopyBtn.addEventListener("click", async () => {
+    const data = exportData();
+    try {
+      await navigator.clipboard.writeText(data);
+      showToast("📤 コピーした!LINEやメモで自分に送ろう");
+    } catch {
+      importArea.hidden = false;
+      importText.value = data;
+      importText.select();
+      showToast("自動コピーできないので選択済み。手動でコピーして");
+    }
+  });
+
+  exportFileBtn.addEventListener("click", () => {
+    const blob = new Blob([exportData()], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `todo-backup-${todayStr()}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
+
+  importBtn.addEventListener("click", () => {
+    importArea.hidden = !importArea.hidden;
+    if (!importArea.hidden) importText.focus();
+  });
+
+  importFileBtn.addEventListener("click", () => importFileInput.click());
+
+  importFileInput.addEventListener("change", () => {
+    const file = importFileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      importArea.hidden = false;
+      importText.value = reader.result;
+    };
+    reader.readAsText(file);
+    importFileInput.value = "";
+  });
+
+  importApply.addEventListener("click", () => {
+    const text = importText.value.trim();
+    if (!text) return;
+    let obj;
+    try {
+      obj = parseBackup(text);
+    } catch {
+      showToast("⚠️ 取り込めない形式。書き出した文字列をそのまま貼ってね");
+      return;
+    }
+    if (!importApply.dataset.armed) {
+      importApply.dataset.armed = "1";
+      importApply.textContent = "本当に置き換える?(この端末の今のデータは消える)";
+      setTimeout(() => {
+        delete importApply.dataset.armed;
+        importApply.textContent = "この内容で置き換える";
+      }, 4000);
+      return;
+    }
+    delete importApply.dataset.armed;
+    importApply.textContent = "この内容で置き換える";
+    applyData(obj);
+    importText.value = "";
+    importArea.hidden = true;
+    showToast("📥 取り込んだ!");
+    scheduleSyncPush();
+  });
+
+  function refreshSyncUI() {
+    const enabled = !!sync.token;
+    syncEnableBtn.hidden = enabled;
+    syncTokenInput.hidden = enabled;
+    syncNowBtn.hidden = !enabled;
+    syncDisableBtn.hidden = !enabled;
+    if (!enabled) setSyncStatus("同期は無効(この端末だけに保存)");
+  }
+
+  syncEnableBtn.addEventListener("click", async () => {
+    const token = syncTokenInput.value.trim();
+    if (!token) {
+      showToast("トークンを貼り付けてね");
+      return;
+    }
+    sync = { token };
+    saveSync();
+    syncTokenInput.value = "";
+    refreshSyncUI();
+    await syncNow();
+  });
+
+  syncNowBtn.addEventListener("click", () => syncNow());
+
+  syncDisableBtn.addEventListener("click", () => {
+    sync = {};
+    saveSync();
+    refreshSyncUI();
+    showToast("同期を解除した(Gist上のデータは残っています)");
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) syncNow();
+  });
+
+  // ---- 起動 ----
+
+  loadState();
   render();
+  booting = false;
   deadlineAlertOnLoad();
+  refreshSyncUI();
+  if (sync.token) syncNow();
 })();

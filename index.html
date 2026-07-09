@@ -190,6 +190,43 @@
         <button type="button" id="note-more" class="btn-text" hidden>もっと見る</button>
       </div>
     </section>
+
+    <section class="sync" aria-label="バックアップと同期">
+      <div class="goals-header">
+        <h2>☁️ バックアップと同期</h2>
+        <span class="m-note">データはこの端末のブラウザに保存されます</span>
+      </div>
+      <div class="sync-card">
+        <div class="sync-row">
+          <button type="button" id="export-copy" class="btn-secondary btn-small">📤 コピーで書き出す</button>
+          <button type="button" id="export-file" class="btn-secondary btn-small">💾 ファイルに保存</button>
+          <button type="button" id="import-btn" class="btn-secondary btn-small">📥 取り込む</button>
+          <input type="file" id="import-file" accept=".json,application/json" hidden>
+        </div>
+        <div id="import-area" hidden>
+          <textarea id="import-text" rows="3" placeholder="書き出した文字列をここに貼り付け(またはファイルを選択)"></textarea>
+          <div class="note-form-row">
+            <button type="button" id="import-file-btn" class="btn-secondary btn-small">ファイルを選ぶ</button>
+            <button type="button" id="import-apply" class="btn-primary btn-small">この内容で置き換える</button>
+          </div>
+        </div>
+        <details id="sync-settings">
+          <summary>🔄 自動同期の設定(GitHub Gist)— スマホ⇔PCを自動で揃える</summary>
+          <p class="m-note sync-help">
+            ① <a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=todo-sync" target="_blank" rel="noopener">このリンク</a>からGitHubトークンを作成(gist権限のみ・有効期限はお好みで)
+            ② 下に貼り付けて「同期を有効にする」 ③ もう一方の端末でも同じトークンを貼るだけ。
+            トークンはこの端末のブラウザにのみ保存されます。データは自分のGitHubアカウントの非公開Gistに置かれます。
+          </p>
+          <div class="sync-row">
+            <input type="password" id="sync-token" placeholder="ghp_... (gist権限のトークン)" autocomplete="off">
+            <button type="button" id="sync-enable" class="btn-primary btn-small">同期を有効にする</button>
+            <button type="button" id="sync-now" class="btn-secondary btn-small" hidden>今すぐ同期</button>
+            <button type="button" id="sync-disable" class="btn-text" hidden>解除</button>
+          </div>
+          <div id="sync-status" class="m-note"></div>
+        </details>
+      </div>
+    </section>
   </main>
 
   <script src="js/app.js"></script>
