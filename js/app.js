@@ -424,7 +424,7 @@
     tasks.push({
       id: uid(),
       title: step.title,
-      due: "",
+      due: step.due || "",
       priority: "medium",
       completed: false,
       createdAt: Date.now(),
@@ -508,6 +508,14 @@
         const nextRow = el("div", "goal-next");
         nextRow.appendChild(el("span", "goal-next-label", "次の一歩"));
         nextRow.appendChild(el("span", "goal-next-title", next.title));
+        if (next.due) {
+          const dueChip = el(
+            "span",
+            "step-due-chip" + (next.due < todayStr() ? " overdue" : ""),
+            `期限 ${next.due.slice(5).replace("-", "/")}`,
+          );
+          nextRow.appendChild(dueChip);
+        }
         const linked = tasks.some((t) => t.stepId === next.id && !isDone(t));
         const addBtn = el(
           "button",
@@ -555,6 +563,7 @@
       const summary = el("summary", null, `ステップ一覧を見る(${done}/${total})`);
       details.appendChild(summary);
       const stepsUl = el("ul", "goal-steps");
+      const today = todayStr();
       for (const step of goal.steps) {
         const li = el("li", step.done ? "step-done" : "");
         const cb = document.createElement("input");
@@ -563,6 +572,19 @@
         cb.setAttribute("aria-label", "ステップ完了");
         cb.addEventListener("change", () => toggleStep(goal, step));
         const label = el("span", "step-title", step.title);
+        const dueIn = document.createElement("input");
+        dueIn.type = "date";
+        dueIn.className =
+          "step-due" + (step.due && !step.done && step.due < today ? " overdue" : "");
+        dueIn.value = step.due || "";
+        dueIn.title = "このステップの締め切り";
+        dueIn.setAttribute("aria-label", "ステップの締め切り");
+        dueIn.addEventListener("change", () => {
+          step.due = dueIn.value;
+          if (!step.due) delete step.due;
+          saveGoals();
+          render();
+        });
         const rm = el("button", "step-del", "✕");
         rm.type = "button";
         rm.title = "ステップを削除";
@@ -573,10 +595,37 @@
         });
         li.appendChild(cb);
         li.appendChild(label);
+        li.appendChild(dueIn);
         li.appendChild(rm);
         stepsUl.appendChild(li);
       }
       details.appendChild(stepsUl);
+
+      // 目標日から逆算して未完了ステップに締切を均等に自動設定
+      if (goal.targetDate && !completed && daysUntil(goal.targetDate) > 0) {
+        const distBtn = el(
+          "button",
+          "btn-text step-dist-btn",
+          "📅 残りステップに締切を自動で割り振る",
+        );
+        distBtn.type = "button";
+        distBtn.addEventListener("click", () => {
+          const days = daysUntil(goal.targetDate);
+          const undone = goal.steps.filter((s) => !s.done);
+          if (!undone.length || days <= 0) return;
+          undone.forEach((s, i) => {
+            const d = new Date();
+            d.setDate(
+              d.getDate() + Math.max(1, Math.round((days * (i + 1)) / undone.length)),
+            );
+            s.due = dateStr(d);
+          });
+          saveGoals();
+          showToast("📅 締切を割り振った!あとはレーダーに任せよう");
+          render();
+        });
+        details.appendChild(distBtn);
+      }
 
       // ステップ追加
       const addRow = el("div", "step-add");
@@ -969,6 +1018,22 @@
       const achieved = g.steps.length > 0 && g.steps.every((s) => s.done);
       if (g.targetDate && !achieved) {
         items.push({ icon: "🎯", type: "目標", title: g.title, date: g.targetDate });
+      }
+      // 締切つきの未完了ステップ。期限つきの連動タスクが進行中なら
+      // そちらがタスクとして載るので二重表示を避ける
+      for (const s of g.steps) {
+        if (!s.due || s.done) continue;
+        const linkedWithDue = tasks.some(
+          (t) => t.stepId === s.id && !isDone(t) && t.due,
+        );
+        if (!linkedWithDue) {
+          items.push({
+            icon: "📍",
+            type: "ステップ",
+            title: `${g.title}: ${s.title}`,
+            date: s.due,
+          });
+        }
       }
     }
     for (const m of materials) {
