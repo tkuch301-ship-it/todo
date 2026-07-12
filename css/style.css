@@ -562,6 +562,42 @@ body {
   word-break: break-word;
 }
 
+.step-due {
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  max-width: 8.5em;
+}
+
+.step-due.overdue {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.step-due-chip {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  white-space: nowrap;
+}
+
+.step-due-chip.overdue {
+  color: var(--danger);
+  border-color: var(--danger);
+  font-weight: bold;
+}
+
+.step-dist-btn {
+  margin-top: 0.5rem;
+  text-align: left;
+}
+
 .step-del {
   border: none;
   background: transparent;
